@@ -14,7 +14,7 @@ class DailyMealSeeder extends Seeder
      */
     public function run(): void
     {
-         DailyMeal::truncate(); // Clear existing
+         DailyMeal::query()->delete(); // Clear existing
 
          $class2 = KindergartenClass::where('min_age', 3)->first();
 

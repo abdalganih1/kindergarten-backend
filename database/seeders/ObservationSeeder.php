@@ -15,7 +15,7 @@ class ObservationSeeder extends Seeder
      */
     public function run(): void
     {
-         Observation::truncate(); // Clear existing
+         Observation::query()->delete(); // Clear existing
 
          $parent2 = ParentModel::whereHas('user', function($q){
                 $q->where('email', 'parent2@example.com');

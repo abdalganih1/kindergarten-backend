@@ -16,7 +16,7 @@ class MediaSeeder extends Seeder
      */
     public function run(): void
     {
-        Media::truncate(); // Clear existing
+        Media::query()->delete(); // Clear existing
 
         $uploader = User::where('role', 'Admin')->first(); // Admin user
         $class2 = KindergartenClass::where('min_age', 3)->first();

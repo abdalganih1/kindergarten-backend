@@ -14,7 +14,7 @@ class EducationalResourceSeeder extends Seeder
      */
     public function run(): void
     {
-        EducationalResource::truncate(); // Clear existing
+        EducationalResource::query()->delete(); // Clear existing
         $admin = Admin::first();
 
         if($admin) {

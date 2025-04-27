@@ -15,7 +15,7 @@ class AnnouncementSeeder extends Seeder
      */
     public function run(): void
     {
-        Announcement::truncate(); // Clear existing
+        Announcement::query()->delete(); // Clear existing
 
         $admin = Admin::first(); // Assuming only one admin for now
         $class2 = KindergartenClass::where('min_age', 3)->first();

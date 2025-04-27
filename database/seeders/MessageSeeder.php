@@ -14,7 +14,7 @@ class MessageSeeder extends Seeder
      */
     public function run(): void
     {
-        Message::truncate(); // Clear existing
+        Message::query()->delete(); // Clear existing
 
         $adminUser = User::where('role', 'Admin')->first();
         $parentUser1 = User::where('email', 'parent1@example.com')->first();

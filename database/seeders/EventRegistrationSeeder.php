@@ -15,7 +15,7 @@ class EventRegistrationSeeder extends Seeder
      */
     public function run(): void
     {
-        EventRegistration::truncate(); // Clear existing
+        EventRegistration::query()->delete(); // Clear existing
 
         $zooEvent = Event::where('event_name', 'رحلة إلى حديقة الحيوان')->first();
         $child2 = Child::where('first_name', 'فاطمة')->first();

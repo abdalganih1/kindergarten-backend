@@ -15,7 +15,7 @@ class HealthRecordSeeder extends Seeder
      */
     public function run(): void
     {
-        HealthRecord::truncate(); // Clear existing
+        HealthRecord::query()->delete(); // Clear existing
 
         $child1 = Child::where('first_name', 'أحمد')->first();
         $child2 = Child::where('first_name', 'فاطمة')->first();
