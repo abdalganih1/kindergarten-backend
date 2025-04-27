@@ -16,7 +16,7 @@ class ParentChildSeeder extends Seeder
     public function run(): void
     {
         // Optional: Clean up pivot table
-        DB::table('parent_children')->query()->delete(); // Truncate is safe for pivot tables
+        DB::table('parent_children')->delete(); // Truncate is safe for pivot tables
 
         $parent1 = ParentModel::where('contact_email', 'parent1@example.com')->first();
         $parent2 = ParentModel::where('contact_email', 'parent2@example.com')->first();
