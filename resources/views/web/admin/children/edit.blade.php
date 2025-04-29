@@ -37,6 +37,7 @@
                              <div class="col-md-6 mb-3">
                                 <label for="date_of_birth" class="form-label">تاريخ الميلاد <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control @error('date_of_birth') is-invalid @enderror" id="date_of_birth" name="date_of_birth" value="{{ old('date_of_birth', $child->date_of_birth) }}" required max="{{ now()->format('Y-m-d') }}">
+                                <small class="form-text text-muted">يجب أن يكون عمر الطفل 6 سنوات أو أقل.</small>
                                 @error('date_of_birth') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <div class="col-md-6 mb-3">

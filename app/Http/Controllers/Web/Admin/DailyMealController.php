@@ -113,12 +113,12 @@ class DailyMealController extends Controller
      * Display the specified resource. (Optional)
      * عرض تفاصيل وجبة واحدة (قد لا تكون ضرورية).
      *
-     * @param  \App\Models\DailyMeal  $meal // استخدام Route Model Binding
+     * @param  \App\Models\DailyMeal  $dailyMeal // استخدام Route Model Binding
      */
-    public function show(DailyMeal $meal)
+    public function show(DailyMeal $dailyMeal)
     {
-        $meal->load('kindergartenClass'); // تحميل علاقة الفصل
-        return view('web.admin.meals.show', compact('meal'));
+        $dailyMeal->load('kindergartenClass'); // تحميل علاقة الفصل
+        return view('web.admin.meals.show', compact('dailyMeal'));
     }
 
     /**
@@ -127,7 +127,7 @@ class DailyMealController extends Controller
      *
      * @param  \App\Models\DailyMeal  $meal
      */
-    public function edit(DailyMeal $meal)
+    public function edit(DailyMeal $dailyMeal)
     {
         // جلب قائمة الفصول للاختيار
         $classes = KindergartenClass::orderBy('class_name')->pluck('class_name', 'class_id');
@@ -135,7 +135,7 @@ class DailyMealController extends Controller
         $mealTypes = ['Breakfast' => 'فطور', 'Lunch' => 'غداء', 'Snack' => 'وجبة خفيفة'];
 
         // إرسال بيانات الوجبة الحالية والبيانات الأخرى للواجهة
-        return view('web.admin.meals.edit', compact('meal', 'classes', 'mealTypes'));
+        return view('web.admin.meals.edit', compact('dailyMeal', 'classes', 'mealTypes'));
     }
 
     /**
