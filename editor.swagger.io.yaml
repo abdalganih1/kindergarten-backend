@@ -1,0 +1,3566 @@
+openapi: 3.0.0
+info:
+  title: نظام إدارة رياض الأطفال - API
+  description: |
+    توثيق واجهة برمجة التطبيقات (API) لنظام إدارة رياض الأطفال.
+    تتيح هذه الواجهة لأولياء الأمور استخدام تطبيق Flutter الخاص بهم للوصول إلى معلومات أطفالهم والتفاعل مع الروضة.
+    تغطي الوظائف الأساسية مثل عرض ملفات الأطفال، الجداول، السجلات الصحية، الوجبات، الإعلانات، الوسائط،
+    الفعاليات والتسجيل فيها، المصادر التعليمية، والمراسلة المباشرة.
+
+    **الأدوار المدعومة عبر هذه الـ API:**
+    *   **Parent (ولي الأمر):** الدور الأساسي، له صلاحيات عرض وتفاعل محدودة ببيانات أطفاله.
+    *   **Supervisor (مشرف):** يمكنه تسجيل الدخول عبر API إذا تم منحه صلاحيات معينة (غير مفصلة في هذا التوثيق ولكن ممكنة).
+    *   **Admin (مدير):** يمكنه تسجيل الدخول عبر API (لأغراض الاختبار أو أدوات الإدارة المصغرة)، ولكن وظائفه الإدارية الرئيسية تكون عبر واجهة الويب.
+  version: 1.0.0
+servers:
+  - url: https://bisque-bear-644012.hostingersite.com/api
+    description: خادم الإنتاج
+  - url: http://127.0.0.1:8000/api
+    description: خادم التطوير المحلي
+
+components:
+  securitySchemes:
+    sanctumAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+      description: |
+        المصادقة باستخدام توكن Laravel Sanctum API.
+        يتم الحصول على التوكن من نقطة النهاية `/login`.
+        يجب تضمين التوكن في هيدر `Authorization` كالتالي: `Bearer <your_token>`
+
+  schemas:
+    # --- General Response Schemas ---
+    SuccessMessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: رسالة نجاح توضيحية.
+          example: تم تسجيل الخروج بنجاح.
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: رسالة خطأ توضيحية.
+          example: حدث خطأ غير متوقع.
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          description: رسالة عامة تفيد بأن البيانات المدخلة غير صالحة.
+          example: "البيانات المدخلة غير صحيحة."
+        errors:
+          type: object
+          description: كائن يحتوي على أخطاء التحقق لكل حقل.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            email:
+              - حقل البريد الإلكتروني مطلوب.
+              - البريد الإلكتروني المدخل ليس صالحًا.
+            password:
+              - كلمة المرور يجب أن لا تقل عن 8 أحرف.
+            child_id:
+              - الطفل المحدد غير موجود أو لا ينتمي لولي الأمر الحالي.
+
+    NotFoundError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: المورد المطلوب غير موجود.
+
+    # --- Pagination Schemas ---
+    PaginationLinkItem:
+      type: object
+      properties:
+        url:
+          type: string
+          description: رابط الصفحة.
+          example: "https://bisque-bear-644012.hostingersite.com/api/children?page=1"
+          nullable: true # يمكن أن يكون null للروابط غير الموجودة (مثل prev في الصفحة الأولى)
+        label:
+          type: string
+          description: وصف الرابط .
+          example: "1"
+        active:
+          type: boolean
+          description: هل هذا الرابط يمثل الصفحة الحالية.
+          example: true
+
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          description: رقم الصفحة الحالية.
+          example: 1
+        from:
+          type: integer
+          description: فهرس أول عنصر في الصفحة.
+          example: 1
+        last_page:
+          type: integer
+          description: رقم آخر صفحة.
+          example: 3
+        links:
+          type: array
+          description: مصفوفة بروابط pagination مفصلة.
+          items:
+            $ref: '#/components/schemas/PaginationLinkItem'
+        path:
+          type: string
+          description: مسار الـ API الأساسي للمورد الم paginated.
+          example: "https://bisque-bear-644012.hostingersite.com/api/children"
+        per_page:
+          type: integer
+          description: عدد العناصر في كل صفحة.
+          example: 15
+        to:
+          type: integer
+          description: فهرس آخر عنصر في الصفحة.
+          example: 15
+        total:
+          type: integer
+          description: إجمالي عدد العناصر المتاحة.
+          example: 42
+
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          description: مصفوفة بالموارد (سيتم تحديد نوعها في كل نقطة نهاية).
+          items: {} # Placeholder, actual type defined in path
+        links:
+          type: object
+          description: روابط التنقل السريع بين الصفحات (أول، آخر، سابق، تالي).
+          properties:
+            first:
+              type: string
+              example: "https://bisque-bear-644012.hostingersite.com/api/children?page=1"
+              nullable: true
+            last:
+              type: string
+              example: "https://bisque-bear-644012.hostingersite.com/api/children?page=3"
+              nullable: true
+            prev:
+              type: string
+              example: null # يمثل null
+              nullable: true
+            next:
+              type: string
+              example: "https://bisque-bear-644012.hostingersite.com/api/children?page=2"
+              nullable: true
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+
+    # --- Core Entity Schemas (for Resources) ---
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: المعرف الفريد للمستخدم.
+          example: 2
+        name:
+          type: string
+          description: الاسم الكامل للمستخدم.
+          example: ولي أمر ١
+        email:
+          type: string
+          format: email
+          description: البريد الإلكتروني لتسجيل الدخول.
+          example: parent1@example.com
+        email_verified_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت التحقق من البريد الإلكتروني.
+          example: null
+          nullable: true
+        role:
+          type: string
+          description: دور المستخدم (Admin, Parent, Supervisor).
+          example: Parent
+        is_active:
+          type: boolean
+          description: هل الحساب نشط.
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء الحساب.
+          example: "2025-04-27T20:39:44.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للحساب.
+          example: "2025-04-27T20:39:44.000000Z"
+        parent_profile:
+          $ref: '#/components/schemas/ParentProfile'
+          description: ملف تعريف ولي الأمر المرتبط، يظهر إذا كان دور المستخدم "Parent" وتم تحميله.
+          nullable: true # يمكن أن يكون null إذا لم يكن دور المستخدم Parent
+        admin_profile:
+          $ref: '#/components/schemas/AdminProfile'
+          description: ملف تعريف المدير المرتبط، يظهر إذا كان دور المستخدم "Admin" وتم تحميله.
+          nullable: true # يمكن أن يكون null إذا لم يكن دور المستخدم Admin
+
+    AdminProfile:
+      type: object
+      properties:
+        admin_id:
+          type: integer
+          description: المعرف الفريد لملف المدير.
+          example: 1
+        user_id:
+          type: integer
+          description: معرف المستخدم المرتبط.
+          example: 1
+        full_name:
+          type: string
+          description: الاسم الكامل للمدير في ملفه الشخصي.
+          example: مدير النظام
+        contact_email:
+          type: string
+          format: email
+          description: بريد الاتصال الخاص بالمدير (قد يختلف عن بريد تسجيل الدخول).
+          example: admin@kindergarten.com
+        contact_phone:
+          type: string
+          description: رقم هاتف الاتصال الخاص بالمدير.
+          example: "123-456-7890"
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء ملف المدير.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لملف المدير.
+          example: "2025-04-27T20:39:45.000000Z"
+
+    ParentProfile:
+      type: object
+      properties:
+        parent_id:
+          type: integer
+          description: المعرف الفريد لملف ولي الأمر.
+          example: 1
+        user_id:
+          type: integer
+          description: معرف المستخدم المرتبط.
+          example: 2
+        full_name:
+          type: string
+          description: الاسم الكامل لولي الأمر في ملفه الشخصي.
+          example: ولي أمر ١
+        contact_email:
+          type: string
+          format: email
+          description: بريد الاتصال الخاص بولي الأمر.
+          example: parent1@example.com
+        contact_phone:
+          type: string
+          description: رقم هاتف الاتصال الخاص بولي الأمر.
+          example: "987-654-3210"
+        address:
+          type: string
+          description: عنوان ولي الأمر.
+          example: "123 Main St, Anytown"
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء ملف ولي الأمر.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لملف ولي الأمر.
+          example: "2025-04-27T20:39:45.000000Z"
+
+    KindergartenClass: # تم تغيير اسم Schema من Class إلى KindergartenClass ليتطابق مع الرد
+      type: object
+      properties:
+        class_id:
+          type: integer
+          description: المعرف الفريد للفصل.
+          example: 2
+        class_name:
+          type: string
+          description: اسم الفصل الدراسي.
+          example: مرحلة ما قبل المدرسة (3-6)
+        description:
+          type: string
+          description: وصف مفصل للفصل.
+          example: "مجموعة الأطفال من سن 3 إلى 6 سنوات"
+        min_age:
+          type: integer
+          description: الحد الأدنى لعمر الأطفال في هذا الفصل بالسنوات.
+          example: 3
+        max_age:
+          type: integer
+          description: الحد الأقصى لعمر الأطفال في هذا الفصل بالسنوات.
+          example: 6
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء الفصل.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للفصل.
+          example: "2025-04-27T20:39:45.000000Z"
+
+    Child:
+      type: object
+      properties:
+        child_id:
+          type: integer
+          description: المعرف الفريد للطفل.
+          example: 1
+        first_name:
+          type: string
+          description: الاسم الأول للطفل.
+          example: أحمد
+        last_name:
+          type: string
+          description: اسم عائلة الطفل.
+          example: علي
+        date_of_birth:
+          type: string
+          format: date
+          description: تاريخ ميلاد الطفل.
+          example: "2022-05-15"
+        gender:
+          type: string
+          description: جنس الطفل (Male, Female, Other).
+          example: Male
+        enrollment_date:
+          type: string
+          format: date
+          description: تاريخ تسجيل الطفل في الروضة.
+          example: "2024-01-10"
+        class_id:
+          type: integer
+          description: معرف الفصل الحالي للطفل.
+          example: 1
+          nullable: true # يمكن أن يكون null إذا لم يتم تعيين فصل
+        allergies:
+          type: string
+          description: قائمة بالحساسية المعروفة للطفل.
+          example: "حساسية الفول السوداني"
+          nullable: true # يمكن أن يكون null
+        medical_notes:
+          type: string
+          description: ملاحظات طبية أخرى ذات صلة بالطفل.
+          example: "لا يوجد"
+          nullable: true # يمكن أن يكون null
+        photo_url:
+          type: string
+          format: url
+          description: رابط URL لصورة ملف الطفل الشخصي.
+          example: "children_photos/ecT67bCsK5R07DHn59DotNvEI7dR87IwXxCiPaQX.png"
+          nullable: true # يمكن أن يكون null
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء ملف الطفل.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لملف الطفل.
+          example: "2025-04-28T10:55:29.000000Z"
+        pivot: # هذا الحقل يظهر في قائمة الأطفال (Many-to-Many)
+          type: object
+          properties:
+            parent_id:
+              type: integer
+              example: 1
+            child_id:
+              type: integer
+              example: 1
+          description: بيانات الربط بين ولي الأمر والطفل (تظهر في قائمة الأطفال).
+          nullable: true # لا يظهر في استعراض طفل واحد
+        kindergarten_class: # تم تغيير الاسم ليتطابق مع الردود
+          $ref: '#/components/schemas/KindergartenClass'
+          description: تفاصيل الفصل المرتبط بالطفل.
+          nullable: true # يمكن أن يكون null
+        health_records: # تظهر فقط في استعراض طفل واحد
+          type: array
+          description: السجلات الصحية للطفل.
+          items:
+            $ref: '#/components/schemas/HealthRecord'
+          nullable: true # لا تظهر في قائمة الأطفال
+        attendances: # تظهر فقط في استعراض طفل واحد
+          type: array
+          description: سجلات حضور الطفل.
+          items:
+            $ref: '#/components/schemas/Attendance'
+          nullable: true # لا تظهر في قائمة الأطفال
+
+    DailyMeal:
+      type: object
+      properties:
+        meal_id:
+          type: integer
+          description: المعرف الفريد للوجبة اليومية.
+          example: 3
+        meal_date:
+          type: string
+          format: date
+          description: تاريخ الوجبة.
+          example: "2024-03-11"
+        meal_type:
+          type: string
+          description: نوع الوجبة (Breakfast, Lunch, Snack).
+          example: Lunch
+        menu_description:
+          type: string
+          description: وصف تفصيلي لقائمة الوجبة.
+          example: |
+            معكرونة بالصلصة الحمراء وسلطة خضراء مع حليب.
+            وجبة غنية بالبروتين والألياف.
+        class_id:
+          type: integer
+          description: معرف الفصل المخصص للوجبة، 0 إذا كانت الوجبة عامة.
+          example: 2
+          nullable: true # يمكن أن يكون null في الردود العامة
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل الوجبة.
+          example: "2025-04-19T18:32:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل الوجبة.
+          example: "2025-04-19T18:32:00Z"
+        kindergarten_class: # تم تغيير الاسم
+          $ref: '#/components/schemas/KindergartenClass'
+          description: تفاصيل الفصل المرتبط بالوجبة، يظهر إذا كانت الوجبة مخصصة لفصل.
+          nullable: true
+
+    ChildMealStatus:
+      type: object
+      properties:
+        status_id:
+          type: integer
+          description: المعرف الفريد لسجل حالة الوجبة.
+          example: 1
+        child_id:
+          type: integer
+          description: معرف الطفل المرتبط بهذا السجل.
+          example: 1
+        meal_id:
+          type: integer
+          description: معرف الوجبة اليومية المرتبطة بهذا السجل.
+          example: 1
+        consumption_status:
+          type: string
+          description: حالة تناول الطفل للوجبة (EatenWell, EatenSome, EatenLittle, NotEaten, Refused, Absent).
+          example: EatenWell
+        status_text:
+          type: string
+          description: نص مترجم لحالة تناول الوجبة.
+          example: أكل جيدًا
+        notes:
+          type: string
+          description: ملاحظات إضافية حول سلوك الطفل أثناء الأكل أو تفاصيل أخرى.
+          example: |
+            أكل كل الطبق وكان سعيدًا.
+            لم يمانع من تناول الخضروات اليوم.
+          nullable: true
+        recorded_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لهذه الحالة.
+          example: "2025-04-19T18:33:00Z"
+        # العلاقات (تظهر فقط إذا تم تحميلها)
+        meal:
+          $ref: '#/components/schemas/DailyMeal'
+          description: تفاصيل الوجبة اليومية المرتبطة.
+          nullable: true
+        child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل المرتبط.
+          nullable: true
+        recorded_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي سجل هذه الحالة.
+          nullable: true
+
+    Announcement:
+      type: object
+      properties:
+        announcement_id:
+          type: integer
+          description: المعرف الفريد للإعلان.
+          example: 2
+        title:
+          type: string
+          description: عنوان الإعلان.
+          example: تذكير برحلة الحديقة
+        content:
+          type: string
+          description: المحتوى الكامل للإعلان.
+          example: |
+            نود تذكير أولياء أمور فصل (3-6) بالرحلة القادمة إلى الحديقة يوم الخميس. يرجى التأكد من إحضار موافقة الرحلة.
+        publish_date:
+          type: string
+          format: date-time
+          description: تاريخ ووقت نشر الإعلان.
+          example: "2025-04-27T20:39:45.000000Z"
+        author_id:
+          type: integer
+          description: معرف المستخدم الذي قام بنشر الإعلان.
+          example: 1
+        target_class_id:
+          type: integer
+          description: معرف الفصل المستهدف، 0 إذا كان الإعلان عامًا.
+          example: 2
+          nullable: true # يمكن أن يكون null
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء الإعلان في قاعدة البيانات.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للإعلان.
+          example: "2025-04-27T20:39:45.000000Z"
+        # العلاقات
+        author:
+          $ref: '#/components/schemas/AdminProfile' # بناءً على الردود، يبدو أنه AdminProfile
+          description: تفاصيل المستخدم الذي قام بنشر الإعلان.
+        target_class:
+          $ref: '#/components/schemas/KindergartenClass'
+          description: تفاصيل الفصل المستهدف للإعلان.
+          nullable: true
+
+    Media:
+      type: object
+      properties:
+        media_id:
+          type: integer
+          description: المعرف الفريد للوسائط.
+          example: 1
+        file_path:
+          type: string
+          format: url
+          description: الرابط الكامل للملف (صورة أو فيديو).
+          example: "https://bisque-bear-644012.hostingersite.com/storage/media/art_activity_20240320.jpg"
+        media_type:
+          type: string
+          description: نوع الوسائط (Image, Video).
+          example: Image
+        description:
+          type: string
+          description: وصف للملف.
+          example: "الأطفال يستمتعون بوقت الفنون والحرف اليدوية في الفصل."
+        upload_date:
+          type: string
+          format: date-time
+          description: تاريخ ووقت رفع الملف.
+          example: "2025-04-19T18:40:00Z"
+        uploader_id:
+          type: integer
+          description: معرف المستخدم الذي قام برفع الملف.
+          example: 1
+        associated_child_id:
+          type: integer
+          description: معرف الطفل المرتبط بالوسائط، 0 إذا لم يكن مرتبطًا بطفل محدد.
+          example: 2
+          nullable: true
+        associated_event_id:
+          type: integer
+          description: معرف الفعالية المرتبطة بالوسائط، 0 إذا لم يكن مرتبطًا بفعالية محددة.
+          example: 1
+          nullable: true
+        associated_class_id:
+          type: integer
+          description: معرف الفصل المرتبط بالوسائط، 0 إذا لم يكن مرتبطًا بفصل محدد.
+          example: 2
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل الوسائط.
+          example: "2025-04-19T18:40:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل الوسائط.
+          example: "2025-04-19T18:40:00Z"
+        # العلاقات
+        uploader:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي قام برفع الوسائط.
+          nullable: true
+        associated_child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل المرتبط (جزء من ملف الطفل).
+          nullable: true
+        associated_event:
+          $ref: '#/components/schemas/Event'
+          description: تفاصيل الفعالية المرتبطة (جزء من ملف الفعالية).
+          nullable: true
+        associated_class:
+          $ref: '#/components/schemas/KindergartenClass'
+          description: تفاصيل الفصل المرتبط.
+          nullable: true
+
+    Event:
+      type: object
+      properties:
+        event_id:
+          type: integer
+          description: المعرف الفريد للفعالية.
+          example: 1
+        event_name:
+          type: string
+          description: اسم الفعالية أو الرحلة.
+          example: رحلة إلى حديقة الحيوان
+        description:
+          type: string
+          description: وصف مفصل للفعالية.
+          example: |
+            زيارة تعليمية وترفيهية لحديقة الحيوان للتعرف على الحيوانات السورية والعالمية.
+            الفعالية تشمل جولة إرشادية ووجبة غداء خفيفة.
+        event_date:
+          type: string
+          format: date-time
+          description: تاريخ ووقت بدء الفعالية.
+          example: "2024-04-15T09:00:00Z"
+        location:
+          type: string
+          description: موقع إقامة الفعالية.
+          example: "حديقة الحيوان الوطنية بدمشق"
+        requires_registration:
+          type: boolean
+          description: هل تتطلب الفعالية تسجيل مسبق.
+          example: true
+        registration_deadline:
+          type: string
+          format: date-time
+          description: الموعد النهائي للتسجيل، يترك فارغًا إذا لم يكن التسجيل مطلوبًا.
+          example: "2024-04-01T17:00:00Z"
+          nullable: true
+        created_by_id:
+          type: integer
+          description: معرف المستخدم الذي قام بإنشاء الفعالية.
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء الفعالية في قاعدة البيانات.
+          example: "2025-04-19T18:45:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للفعالية.
+          example: "2025-04-19T18:45:00Z"
+        # العلاقات
+        created_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي أنشأ الفعالية.
+          nullable: true
+        registrations:
+          type: array
+          description: قائمة بالتسجيلات لهذه الفعالية.
+          items:
+            $ref: '#/components/schemas/EventRegistration'
+          nullable: true
+
+    EventRegistration:
+      type: object
+      properties:
+        registration_id:
+          type: integer
+          description: المعرف الفريد لتسجيل الفعالية.
+          example: 1
+        event_id:
+          type: integer
+          description: معرف الفعالية التي تم التسجيل فيها.
+          example: 1
+        child_id:
+          type: integer
+          description: معرف الطفل الذي تم تسجيله.
+          example: 2
+        registration_date:
+          type: string
+          format: date-time
+          description: تاريخ ووقت التسجيل.
+          example: "2025-04-19T18:50:00Z"
+        parent_consent:
+          type: boolean
+          description: هل وافق ولي الأمر على التسجيل.
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل التسجيل.
+          example: "2025-04-19T18:50:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل التسجيل.
+          example: "2025-04-19T18:50:00Z"
+        # العلاقات
+        event:
+          $ref: '#/components/schemas/Event'
+          description: تفاصيل الفعالية التي تم التسجيل فيها.
+          nullable: true
+        child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل الذي تم تسجيله (جزء من ملف الطفل).
+          nullable: true
+
+    EducationalResource:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+          description: المعرف الفريد للمصدر التعليمي.
+          example: 1
+        title:
+          type: string
+          description: عنوان المصدر التعليمي.
+          example: أغنية الحروف الأبجدية
+        description:
+          type: string
+          description: وصف للمصدر التعليمي.
+          example: |
+            فيديو تعليمي ممتع لتعلم الحروف العربية بطريقة تفاعلية ومبتكرة.
+            مناسب للأطفال في مرحلة ما قبل المدرسة.
+        resource_type:
+          type: string
+          description: نوع المصدر (Video, Article, Game, Link).
+          example: Video
+        url_or_path:
+          type: string
+          format: url
+          description: الرابط أو المسار إلى المصدر.
+          example: "https://www.youtube.com/watch?v=ABCDEFG1234"
+        target_age_min:
+          type: integer
+          description: العمر الأدنى المستهدف بالسنوات.
+          example: 3
+        target_age_max:
+          type: integer
+          description: العمر الأقصى المستهدف بالسنوات.
+          example: 6
+        subject:
+          type: string
+          description: اللغة العربية
+          example: اللغة العربية
+        added_by_id:
+          type: integer
+          description: معرف المستخدم الذي أضاف المصدر.
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إضافة المصدر.
+          example: "2025-04-19T18:55:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للمصدر.
+          example: "2025-04-19T18:55:00Z"
+        # العلاقات
+        added_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي أضاف المصدر.
+          nullable: true
+
+    HealthRecord:
+      type: object
+      properties:
+        record_id:
+          type: integer
+          description: المعرف الفريد للسجل الصحي.
+          example: 1
+        child_id:
+          type: integer
+          description: معرف الطفل المرتبط بالسجل.
+          example: 1
+        record_type:
+          type: string
+          description: نوع السجل (Vaccination, Checkup, Illness, MedicationAdministered).
+          example: Vaccination
+        record_date:
+          type: string
+          format: date
+          description: تاريخ السجل.
+          example: "2023-05-15"
+        details:
+          type: string
+          description: |
+            تفاصيل السجل (مثال: اسم التطعيم، ملاحظات الطبيب).
+            لقاح الحصبة والنكاف والحصبة الألمانية (MMR) - الجرعة الأولى.
+        next_due_date:
+          type: string
+          format: date
+          description: تاريخ الاستحقاق التالي أو المتابعة.
+          example: "2027-05-15"
+          nullable: true # يمكن أن يكون null
+        document_path:
+          type: string
+          format: url
+          description: رابط URL للمستند المرفق (صورة، PDF).
+          example: null
+          nullable: true # يمكن أن يكون null
+        entered_by_id:
+          type: integer
+          description: معرف المستخدم الذي أدخل السجل.
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء السجل.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للسجل.
+          example: "2025-04-27T20:39:45.000000Z"
+        # العلاقات (تظهر فقط إذا تم تحميلها بشكل صريح)
+        child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل المرتبط.
+          nullable: true
+        entered_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي أدخل السجل.
+          nullable: true
+
+    WeeklySchedule:
+      type: object
+      properties:
+        schedule_id:
+          type: integer
+          description: المعرف الفريد لمدخل الجدول.
+          example: 1
+        class_id:
+          type: integer
+          description: معرف الفصل المرتبط بهذا النشاط.
+          example: 2
+        day_of_week:
+          type: string
+          description: يوم الأسبوع للنشاط (Monday, Tuesday, etc.).
+          example: Monday
+        start_time:
+          type: string
+          format: time
+          description: وقت بدء النشاط (HH:MM:SS).
+          example: "09:00:00"
+        end_time:
+          type: string
+          format: time
+          description: وقت انتهاء النشاط (HH:MM:SS).
+          example: "09:30:00"
+        activity_description:
+          type: string
+          description: وصف النشاط المجدول.
+          example: "حلقة الصباح والترحيب"
+        created_by_id:
+          type: integer
+          description: معرف المستخدم الذي أنشأ هذا المدخل في الجدول.
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء المدخل في الجدول.
+          example: "2025-04-27T20:39:45.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث للمدخل.
+          example: "2025-04-27T20:39:45.000000Z"
+        # العلاقات (تظهر فقط إذا تم تحميلها بشكل صريح)
+        kindergarten_class: # تم تغيير الاسم
+          $ref: '#/components/schemas/KindergartenClass'
+          description: تفاصيل الفصل المرتبط.
+          nullable: true
+        created_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي أنشأ المدخل.
+          nullable: true
+
+    Message:
+      type: object
+      properties:
+        message_id:
+          type: integer
+          description: المعرف الفريد للرسالة.
+          example: 1
+        sender_id:
+          type: integer
+          description: معرف المستخدم المرسل.
+          example: 1
+        recipient_id:
+          type: integer
+          description: معرف المستخدم المستلم.
+          example: 2
+        subject:
+          type: string
+          description: موضوع الرسالة.
+          example: تذكير بخصوص رحلة الحديقة
+          nullable: true
+        body:
+          type: string
+          description: نص الرسالة الكامل.
+          example: |
+            السيدة/السيد ولي أمر ١، نود تذكيركم بالرحلة القادمة إلى الحديقة يوم الخميس.
+            يرجى التأكد من إحضار موافقة الرحلة قبل الموعد.
+            شكراً لتعاونكم.
+        sent_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إرسال الرسالة.
+          example: "2025-04-19T19:10:00Z"
+        read_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت قراءة الرسالة من قبل المستلم.
+          example: "2025-04-19T19:15:00Z"
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل الرسالة.
+          example: "2025-04-19T19:10:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل الرسالة.
+          example: "2025-04-19T19:10:00Z"
+        # العلاقات
+        sender:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم المرسل.
+          nullable: true
+        recipient:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم المستلم.
+          nullable: true
+
+    Observation:
+      type: object
+      properties:
+        observation_id:
+          type: integer
+          description: المعرف الفريد للملاحظة.
+          example: 1
+        parent_id:
+          type: integer
+          description: معرف ولي الأمر الذي قدم الملاحظة.
+          example: 2
+        child_id:
+          type: integer
+          description: معرف الطفل المرتبط بالملاحظة، 0 إذا كانت عامة.
+          example: 3
+          nullable: true
+        observation_text:
+          type: string
+          description: نص الملاحظة.
+          example: |
+            لاحظت أن زينب متحمسة جداً لنشاط الفنون والحرف اليدوية الأخير،
+            وقد تحدثت عنه في المنزل كثيرًا، مما يدل على استمتاعها بالنشاط.
+        submitted_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت تقديم الملاحظة.
+          example: "2025-04-19T19:20:00Z"
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل الملاحظة.
+          example: "2025-04-19T19:20:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل الملاحظة.
+          example: "2025-04-19T19:20:00Z"
+        # العلاقات
+        parent_submitter:
+          $ref: '#/components/schemas/ParentProfile'
+          description: تفاصيل ولي الأمر الذي قدم الملاحظة.
+          nullable: true
+        child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل المرتبط بالملاحظة.
+          nullable: true
+
+    Attendance:
+      type: object
+      properties:
+        attendance_id:
+          type: integer
+          description: المعرف الفريد لسجل الحضور.
+          example: 3
+        child_id:
+          type: integer
+          description: معرف الطفل المرتبط بسجل الحضور.
+          example: 1
+        attendance_date:
+          type: string
+          format: date
+          description: تاريخ تسجيل الحضور.
+          example: "2025-04-29"
+        status:
+          type: string
+          description: حالة الحضور (Present, Absent, Late, Excused).
+          example: Late
+        check_in_time:
+          type: string
+          format: time
+          description: وقت دخول الطفل.
+          example: "09:00:00"
+          nullable: true # يمكن أن يكون null إذا كانت الحالة Absent
+        check_out_time:
+          type: string
+          format: time
+          description: وقت خروج الطفل.
+          example: "03:00:00"
+          nullable: true # يمكن أن يكون null إذا كانت الحالة Absent
+        notes:
+          type: string
+          description: ملاحظات إضافية حول الحضور.
+          example: "الطفل مشاغب"
+          nullable: true # يمكن أن يكون null
+        recorded_by_id:
+          type: integer
+          description: معرف المستخدم الذي سجل الحضور.
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت إنشاء سجل الحضور.
+          example: "2025-04-29T12:35:27.000000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: تاريخ ووقت آخر تحديث لسجل الحضور.
+          example: "2025-04-29T12:35:27.000000Z"
+        # العلاقات (تظهر فقط إذا تم تحميلها بشكل صريح)
+        child:
+          $ref: '#/components/schemas/Child'
+          description: تفاصيل الطفل المرتبط.
+          nullable: true
+        recorded_by:
+          $ref: '#/components/schemas/User'
+          description: تفاصيل المستخدم الذي سجل الحضور.
+          nullable: true
+
+    # --- Request Body Schemas ---
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+        - device_name
+      properties:
+        email:
+          type: string
+          format: email
+          description: البريد الإلكتروني لتسجيل الدخول.
+          example: parent1@example.com
+        password:
+          type: string
+          format: password
+          description: كلمة المرور.
+          example: password
+        device_name:
+          type: string
+          description: اسم الجهاز الذي يسجل الدخول (مثل 'Flutter App').
+          example: FlutterApp_Android
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - password_confirmation
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: البريد الإلكتروني الفريد للمستخدم.
+          example: newparent@example.com
+        password:
+          type: string
+          format: password
+          description: كلمة مرور المستخدم (8 أحرف كحد أدنى).
+          example: securepassword123
+        password_confirmation:
+          type: string
+          format: password
+          description: تأكيد كلمة المرور (يجب أن تتطابق مع كلمة المرور).
+          example: securepassword123
+        name:
+          type: string
+          description: الاسم الكامل لولي الأمر.
+          example: ولي أمر جديد
+        contact_email:
+          type: string
+          format: email
+          description: بريد الاتصال لولي الأمر (اختياري).
+          example: newparent.contact@example.com
+          nullable: true
+        contact_phone:
+          type: string
+          description: رقم هاتف الاتصال لولي الأمر (اختياري).
+          example: "0912345678"
+          nullable: true
+        address:
+          type: string
+          description: عنوان ولي الأمر (اختياري).
+          example: "789 شارع الأمل، حي المستقبل"
+          nullable: true
+        device_name:
+          type: string
+          description: اسم الجهاز الذي يسجل الطلب.
+          example: FlutterPhone
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: الاسم الكامل الجديد للمستخدم.
+          example: ولي أمر الأول المعدل
+        contact_email:
+          type: string
+          format: email
+          description: بريد الاتصال الجديد لولي الأمر.
+          example: parent1.new@example.com
+        contact_phone:
+          type: string
+          description: رقم هاتف الاتصال الجديد لولي الأمر.
+          example: "0998765432"
+        address:
+          type: string
+          description: العنوان الجديد لولي الأمر.
+          example: "456 شارع المجد، حي النور"
+
+    UpdatePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - password
+        - password_confirmation
+      properties:
+        current_password:
+          type: string
+          format: password
+          description: كلمة المرور الحالية للمستخدم.
+          example: password
+        password:
+          type: string
+          format: password
+          description: كلمة المرور الجديدة.
+          example: new_strong_password
+        password_confirmation:
+          type: string
+          format: password
+          description: تأكيد كلمة المرور الجديدة.
+          example: new_strong_password
+
+    StoreEventRegistrationRequest:
+      type: object
+      required:
+        - child_id
+      properties:
+        child_id:
+          type: integer
+          description: معرف الطفل المراد تسجيله في الفعالية.
+          example: 2
+        parent_consent:
+          type: boolean
+          description: موافقة ولي الأمر على التسجيل.
+          example: true
+          default: true
+
+    StoreObservationRequest:
+      type: object
+      required:
+        - observation_text
+      properties:
+        observation_text:
+          type: string
+          description: نص الملاحظة.
+          example: "أطفال الفصل سعيدون جداً بورشة العمل الأخيرة."
+        child_id:
+          type: integer
+          description: معرف الطفل المرتبط بالملاحظة (اختياري).
+          example: 3
+          nullable: true
+
+    StoreMessageRequest:
+      type: object
+      required:
+        - recipient_id
+        - body
+      properties:
+        recipient_id:
+          type: integer
+          description: معرف المستخدم المستلم (مدير أو مشرف).
+          example: 1
+        subject:
+          type: string
+          description: موضوع الرسالة (اختياري).
+          example: "استفسار بخصوص الأنشطة الصباحية"
+          nullable: true
+        body:
+          type: string
+          description: نص الرسالة.
+          example: "مرحباً، أود الاستفسار عن الأنشطة الصباحية المخطط لها الأسبوع القادم، هل يوجد جدول تفصيلي؟"
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        token:
+          type: string
+          description: Sanctum API token.
+          example: "1|uCRaEfiL4aOHLpJccsgA1CPxbPHeGmeNtd7SXjU5a65e27cf"
+      example:
+        token: "1|uCRaEfiL4aOHLpJccsgA1CPxbPHeGmeNtd7SXjU5a65e27cf"
+        user:
+          id: 2
+          name: ولي أمر ١
+          email: parent1@example.com
+          email_verified_at: null
+          role: Parent
+          is_active: true
+          created_at: "2025-04-27T20:39:44.000000Z"
+          updated_at: "2025-04-27T20:39:44.000000Z"
+          parent_profile:
+            parent_id: 1
+            user_id: 2
+            full_name: ولي أمر ١
+            contact_email: parent1@example.com
+            contact_phone: "987-654-3210"
+            address: "123 Main St, Anytown"
+            created_at: "2025-04-27T20:39:45.000000Z"
+            updated_at: "2025-04-27T20:39:45.000000Z"
+          admin_profile: null # يمثل null
+          
+    # --- Endpoints ---
+paths:
+
+  # --- Authentication Paths (Public) ---
+  /login:
+    post:
+      summary: مصادقة المستخدم وإصدار التوكن
+      tags:
+        - المصادقة
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: مصادقة ناجحة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '422':
+          description: خطأ في التحقق من الصحة (بيانات اعتماد غير صالحة)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  email:
+                    - بيانات الاعتماد هذه لا تتطابق سجلاتنا.
+        '403':
+          description: غير مصرح به (الحساب غير نشط أو الدور غير مسموح به)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "الحساب غير نشط أو الدور غير مسموح به للوصول إلى API."
+
+  # --- Public Registration Path (If enabled) ---
+  /register:
+    post:
+      summary: تسجيل حساب جديد (لأولياء الأمور)
+      tags:
+        - المصادقة
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: تم التسجيل بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+              example:
+                token: "4|XYZabc123DEFghi456JKLmno789PQR"
+                user:
+                  id: 5
+                  name: ولي أمر جديد
+                  email: newparent@example.com
+                  email_verified_at: null
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-20T10:00:00Z"
+                  updated_at: "2025-04-20T10:00:00Z"
+                  parent_profile:
+                    parent_id: 3
+                    user_id: 5
+                    full_name: ولي أمر جديد
+                    contact_email: newparent@example.com
+                    contact_phone: "0912345678"
+                    address: "789 شارع الأمل"
+                    created_at: "2025-04-20T10:00:00Z"
+                    updated_at: "2025-04-20T10:00:00Z"
+                  admin_profile: null # يمثل null
+        '422':
+          description: خطأ في التحقق من الصحة (بيانات غير صالحة، بريد مكرر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  email:
+                    - البريد الإلكتروني هذا موجود بالفعل.
+                  password:
+                    - كلمة المرور يجب أن لا تقل عن 8 أحرف.
+
+  # --- Authenticated Paths (Parent Role Required) ---
+  # These routes are nested under a middleware group that requires 'auth:sanctum' and 'role:Parent'.
+  # Supervisor/Admin roles will generally receive a 403 Forbidden on these endpoints unless configured otherwise.
+
+  /logout:
+    post:
+      summary: تسجيل خروج المستخدم المصادق عليه وإبطال التوكن
+      tags:
+        - المصادقة
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: تم تسجيل الخروج بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessageResponse'
+              example:
+                message: تم تسجيل الخروج بنجاح.
+        '401':
+          description: غير مصرح به (توكن غير صالح أو مفقود)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: Unauthenticated.
+
+  /user:
+    get:
+      summary: الحصول على تفاصيل المستخدم المصادق عليه (بما في ذلك ملف ولي الأمر)
+      tags:
+        - ملف المستخدم
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: تفاصيل المستخدم المصادق عليه
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: # الردود عادة ما تكون مغلفة في 'data'
+                    $ref: '#/components/schemas/User'
+              example:
+                data: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                  id: 2
+                  name: ولي أمر ١
+                  email: parent1@example.com
+                  email_verified_at: null
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-27T20:39:44.000000Z"
+                  updated_at: "2025-04-27T20:39:44.000000Z"
+                  parent_profile:
+                    parent_id: 1
+                    user_id: 2
+                    full_name: ولي أمر ١
+                    contact_email: parent1@example.com
+                    contact_phone: "987-654-3210"
+                    address: "123 Main St, Anytown"
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  admin_profile: null # يمثل null
+        '401':
+          description: غير مصرح به (توكن غير صالح أو مفقود)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: Unauthenticated.
+
+  /profile:
+    get:
+      summary: الحصول على ملف ولي الأمر المصادق عليه
+      tags:
+        - ملف المستخدم
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: تفاصيل ملف ولي الأمر
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: # الردود عادة ما تكون مغلفة في 'data'
+                    $ref: '#/components/schemas/User'
+              example:
+                data: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                  id: 2
+                  name: ولي أمر ١
+                  email: "parent1@example.com"
+                  email_verified_at: null
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-27T20:39:44.000000Z"
+                  updated_at: "2025-04-27T20:39:44.000000Z"
+                  parent_profile:
+                    parent_id: 1
+                    user_id: 2
+                    full_name: ولي أمر ١
+                    contact_email: "parent1@example.com"
+                    contact_phone: "987-654-3210"
+                    address: "123 Main St, Anytown"
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  admin_profile: null # يمثل null
+        '401':
+          description: غير مصرح به (توكن غير صالح أو مفقود)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: Unauthenticated.
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: غير مصرح به. تم رفض الوصول.
+
+    put:
+      summary: تحديث ملف ولي الأمر المصادق عليه
+      tags:
+        - ملف المستخدم
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: تم تحديث الملف الشخصي بنجاح.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+              example:
+                data:
+                  id: 2
+                  name: ولي أمر الأول المعدل
+                  email: parent1@example.com
+                  email_verified_at: null
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T19:30:00Z" # تاريخ ووقت التحديث
+                  parent_profile:
+                    parent_id: 1
+                    user_id: 2
+                    full_name: ولي أمر الأول المعدل
+                    contact_email: "parent1.new@example.com"
+                    contact_phone: "0998765432"
+                    address: "456 شارع المجد، حي النور"
+                    created_at: "2025-04-19T18:28:00Z"
+                    updated_at: "2025-04-19T19:30:00Z"
+                  admin_profile: null # يمثل null
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: Unauthenticated.
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: غير مصرح به. تم رفض الوصول.
+        '422':
+          description: خطأ في التحقق من الصحة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  contact_email:
+                    - تنسيق البريد الإلكتروني غير صالح.
+                  address:
+                    - العنوان يجب ألا يتجاوز 1000 حرف.
+
+  /profile/password:
+    put:
+      summary: تحديث كلمة مرور المستخدم المصادق عليه.
+      tags:
+        - ملف المستخدم
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePasswordRequest'
+      responses:
+        '200':
+          description: تم تحديث كلمة المرور بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessageResponse'
+              example:
+                message: تم تحديث كلمة المرور بنجاح.
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: Unauthenticated.
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: غير مصرح به. تم رفض الوصول.
+        '422':
+          description: خطأ في التحقق من الصحة (كلمة مرور غير مطابقة، ضعيفة، أو كلمة مرور حالية خاطئة)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  current_password:
+                    - كلمة المرور الحالية غير صحيحة.
+                  password:
+                    - كلمة المرور الجديدة غير متطابقة.
+                    - كلمة المرور يجب أن تتكون من 8 أحرف على الأقل.
+
+  /children:
+    get:
+      summary: عرض أطفال ولي الأمر المصادق عليه.
+      tags:
+        - الأطفال
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الأطفال لكل صفحة.
+          example: 10
+      responses:
+        '200':
+          description: قائمة بأطفال ولي الأمر (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Child'
+              example: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                data:
+                  - child_id: 1
+                    first_name: أحمد
+                    last_name: علي
+                    date_of_birth: "2022-05-15"
+                    gender: Male
+                    enrollment_date: "2024-01-10"
+                    class_id: 1
+                    allergies: "حساسية الفول السوداني"
+                    medical_notes: "لا يوجد"
+                    photo_url: "children_photos/ecT67bCsK5R07DHn59DotNvEI7dR87IwXxCiPaQX.png"
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-28T10:55:29.000000Z"
+                    pivot:
+                      parent_id: 1
+                      child_id: 1
+                    kindergarten_class:
+                      class_id: 1
+                      class_name: "الأطفال الصغار (أقل من 3)"
+                      description: "مجموعة الأطفال تحت سن الثالثة"
+                      min_age: 0
+                      max_age: 2
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                  - child_id: 2
+                    first_name: فاطمة
+                    last_name: محمد
+                    date_of_birth: "2020-11-20"
+                    gender: Female
+                    enrollment_date: "2024-01-10"
+                    class_id: 2
+                    allergies: null
+                    medical_notes: "تحتاج نظارة للقراءة"
+                    photo_url: "children_photos/iOgVadja4bLR9b6BB1cQJf9txe8VtOPS2XhjjxSq.jpg"
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-28T10:46:36.000000Z"
+                    pivot:
+                      parent_id: 1
+                      child_id: 2
+                    kindergarten_class:
+                      class_id: 2
+                      class_name: "مرحلة ما قبل المدرسة (3-6)"
+                      description: "مجموعة الأطفال من سن 3 إلى 6 سنوات"
+                      min_age: 3
+                      max_age: 6
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                  - child_id: 4
+                    first_name: عمر
+                    last_name: بغاج
+                    date_of_birth: "2021-03-20"
+                    gender: Male
+                    enrollment_date: "2025-04-29"
+                    class_id: null
+                    allergies: "لا يوجد"
+                    medical_notes: "لا يوجد"
+                    photo_url: "children_photos/kT05MyPKtHDF48GNXtf2oX7UkYr6sisWKsMEay1i.jpg"
+                    created_at: "2025-04-29T12:39:02.000000Z"
+                    updated_at: "2025-04-29T20:30:50.000000Z"
+                    pivot:
+                      parent_id: 1
+                      child_id: 4
+                    kindergarten_class: null
+                  - child_id: 5
+                    first_name: هيثم
+                    last_name: العبدالله
+                    date_of_birth: "2021-05-30"
+                    gender: Male
+                    enrollment_date: "2025-04-30"
+                    class_id: null
+                    allergies: null
+                    medical_notes: null
+                    photo_url: "children_photos/PO28O8Il0vnNVW0jEDWffFcnkgq6fXzTXwZmzpVD.jpg"
+                    created_at: "2025-04-30T09:35:47.000000Z"
+                    updated_at: "2025-04-30T09:35:47.000000Z"
+                    pivot:
+                      parent_id: 1
+                      child_id: 5
+                    kindergarten_class: null
+                  - child_id: 8
+                    first_name: آية
+                    last_name: العلي
+                    date_of_birth: "2023-07-30"
+                    gender: Female
+                    enrollment_date: "2025-04-30"
+                    class_id: 1
+                    allergies: null
+                    medical_notes: null
+                    photo_url: "children_photos/cJLmKG3SBwcAKMsTZZrpX8aDLY39bEg3wiiNuzv3.jpg"
+                    created_at: "2025-04-30T09:39:19.000000Z"
+                    updated_at: "2025-04-30T09:39:19.000000Z"
+                    pivot:
+                      parent_id: 1
+                      child_id: 8
+                    kindergarten_class:
+                      class_id: 1
+                      class_name: "الأطفال الصغار (أقل من 3)"
+                      description: "مجموعة الأطفال تحت سن الثالثة"
+                      min_age: 0
+                      max_age: 2
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/children?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/children?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/children?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/children"
+                  per_page: 15
+                  to: 5
+                  total: 5
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /children/{child}:
+    get:
+      summary: عرض تفاصيل طفل محدد لولي الأمر.
+      tags:
+        - الأطفال
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: child
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف الطفل (child_id).
+          example: 1
+      responses:
+        '200':
+          description: تفاصيل الطفل الكاملة.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: # الردود عادة ما تكون مغلفة في 'data'
+                    $ref: '#/components/schemas/Child'
+              example: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                data:
+                  child_id: 1
+                  first_name: أحمد
+                  last_name: علي
+                  date_of_birth: "2022-05-15"
+                  gender: Male
+                  enrollment_date: "2024-01-10"
+                  class_id: 1
+                  allergies: "حساسية الفول السوداني"
+                  medical_notes: "لا يوجد"
+                  photo_url: "children_photos/ecT67bCsK5R07DHn59DotNvEI7dR87IwXxCiPaQX.png"
+                  created_at: "2025-04-27T20:39:45.000000Z"
+                  updated_at: "2025-04-28T10:55:29.000000Z"
+                  kindergarten_class:
+                    class_id: 1
+                    class_name: "الأطفال الصغار (أقل من 3)"
+                    description: "مجموعة الأطفال تحت سن الثالثة"
+                    min_age: 0
+                    max_age: 2
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  health_records:
+                    - record_id: 1
+                      child_id: 1
+                      record_type: "Vaccination"
+                      record_date: "2023-05-15"
+                      details: "لقاح الحصبة والنكاف والحصبة الألمانية (MMR) - الجرعة الأولى"
+                      next_due_date: "2027-05-15"
+                      document_path: null
+                      entered_by_id: 1
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                    - record_id: 4
+                      child_id: 1
+                      record_type: "Vaccination"
+                      record_date: "2025-04-29"
+                      details: "تم بنجاح"
+                      next_due_date: null
+                      document_path: null
+                      entered_by_id: 6
+                      created_at: "2025-04-29T14:52:45.000000Z"
+                      updated_at: "2025-04-29T14:52:45.000000Z"
+                  attendances:
+                    - attendance_id: 3
+                      child_id: 1
+                      attendance_date: "2025-04-29"
+                      status: "Late"
+                      check_in_time: "09:00:00"
+                      check_out_time: "03:00:00"
+                      notes: "الطفل مشاغب"
+                      recorded_by_id: 1
+                      created_at: "2025-04-29T12:35:27.000000Z"
+                      updated_at: "2025-04-29T12:35:27.000000Z"
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (الطفل لا ينتمي لولي الأمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به أو الطفل غير موجود."
+        '404':
+          description: لم يتم العثور على الطفل
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على الطفل."
+
+  /schedules:
+    get:
+      summary: عرض الجداول الأسبوعية لفصول أطفال ولي الأمر المصادق عليه.
+      tags:
+        - الجداول الأسبوعية
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد عناصر الجدول لكل صفحة.
+          example: 15
+      responses:
+        '200':
+          description: قائمة بالجداول الأسبوعية (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/WeeklySchedule'
+              example: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                data:
+                  - schedule_id: 1
+                    class_id: 2
+                    day_of_week: "Monday"
+                    start_time: "09:00:00"
+                    end_time: "09:30:00"
+                    activity_description: "حلقة الصباح والترحيب"
+                    created_by_id: 1
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  - schedule_id: 2
+                    class_id: 2
+                    day_of_week: "Monday"
+                    start_time: "09:30:00"
+                    end_time: "10:30:00"
+                    activity_description: "أنشطة تعليمية (حروف وأرقام)"
+                    created_by_id: 1
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  - schedule_id: 3
+                    class_id: 2
+                    day_of_week: "Monday"
+                    start_time: "10:30:00"
+                    end_time: "11:00:00"
+                    activity_description: "وقت الوجبة الخفيفة"
+                    created_by_id: 1
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                  - schedule_id: 4
+                    class_id: 2
+                    day_of_week: "Wednesday"
+                    start_time: "10:00:00"
+                    end_time: "11:00:00"
+                    activity_description: "فنون وحرف يدوية"
+                    created_by_id: 1
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/schedules?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/schedules?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/schedules?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/schedules"
+                  per_page: 15
+                  to: 4
+                  total: 4
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /health-records:
+    get:
+      summary: عرض السجلات الصحية لأطفال ولي الأمر المصادق عليه.
+      tags:
+        - السجلات الصحية
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد السجلات الصحية لكل صفحة.
+          example: 10
+        - name: child_id
+          in: query
+          schema:
+            type: integer
+          description: فلترة السجلات حسب معرف الطفل.
+          example: 2
+      responses:
+        '200':
+          description: قائمة بالسجلات الصحية (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/HealthRecord'
+              example:
+                data:
+                  - record_id: 1
+                    child_id: 1
+                    record_type: Vaccination
+                    record_date: "2023-05-15"
+                    details: "لقاح الحصبة والنكاف والحصبة الألمانية (MMR) - الجرعة الأولى."
+                    next_due_date: "2027-05-15"
+                    document_path: null
+                    entered_by_id: 1 # Admin
+                    created_at: "2025-04-19T19:00:00Z"
+                    updated_at: "2025-04-19T19:00:00Z"
+                  - record_id: 2
+                    child_id: 2
+                    record_type: Checkup
+                    record_date: "2024-01-20"
+                    details: "فحص طبي دوري - كل شيء طبيعي. تم التوصية بفحص نظر."
+                    next_due_date: "2025-01-20"
+                    document_path: null
+                    entered_by_id: 3 # Parent
+                    created_at: "2025-04-19T19:00:00Z"
+                    updated_at: "2025-04-19T19:00:00Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/health-records?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/health-records?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/health-records?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/health-records"
+                  per_page: 10
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '422':
+          description: خطأ في التحقق من الصحة (معرف طفل غير صالح)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  child_id:
+                    - الطفل المحدد غير موجود أو لا ينتمي لولي الأمر الحالي.
+
+  /meals:
+    get:
+      summary: عرض الوجبات اليومية (عامة أو خاصة بفصول الأطفال).
+      tags:
+        - الوجبات اليومية
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: تاريخ الوجبات المطلوب (YYYY-MM-DD). الافتراضي هو اليوم الحالي.
+          example: "2024-03-10"
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الوجبات لكل صفحة.
+          example: 10
+      responses:
+        '200':
+          description: قائمة بالوجبات اليومية (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DailyMeal'
+              example:
+                data:
+                  - meal_id: 1
+                    meal_date: "2024-03-10"
+                    meal_type: Lunch
+                    menu_description: "دجاج مشوي مع أرز وخضروات سوتيه وعصير ليمون."
+                    class_id: null # يمثل null
+                    created_at: "2025-04-19T18:32:00Z"
+                    updated_at: "2025-04-19T18:32:00Z"
+                    kindergarten_class: null
+                  - meal_id: 2
+                    meal_date: "2024-03-10"
+                    meal_type: Snack
+                    menu_description: "فواكه طازجة (تفاح وموز) مع قطعة بسكويت."
+                    class_id: null # يمثل null
+                    created_at: "2025-04-19T18:32:00Z"
+                    updated_at: "2025-04-19T18:32:00Z"
+                    kindergarten_class: null
+                  - meal_id: 3
+                    meal_date: "2024-03-11"
+                    meal_type: Lunch
+                    menu_description: "معكرونة بالصلصة الحمراء وسلطة خضراء مع حليب."
+                    class_id: 2
+                    created_at: "2025-04-19T18:32:00Z"
+                    updated_at: "2025-04-19T18:32:00Z"
+                    kindergarten_class:
+                      class_id: 2
+                      class_name: مرحلة ما قبل المدرسة (3-6)
+                      description: "مجموعة الأطفال من سن 3 إلى 6 سنوات، تركز على اللعب التعاوني."
+                      min_age: 3
+                      max_age: 6
+                      created_at: "2025-04-19T18:29:00Z"
+                      updated_at: "2025-04-19T18:29:00Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/meals?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/meals?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/meals?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/meals"
+                  per_page: 10
+                  to: 3
+                  total: 3
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '422':
+          description: خطأ في التحقق من الصحة (تنسيق تاريخ غير صالح)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  date:
+                    - التاريخ المدخل لا يطابق التنسيق YYYY-MM-DD.
+
+  /meal-statuses:
+    get:
+      summary: عرض حالات تناول الوجبات لأطفال ولي الأمر المصادق عليه.
+      tags:
+        - الوجبات اليومية
+        - حالات الوجبات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: تاريخ الوجبات المطلوب (YYYY-MM-DD). الافتراضي هو اليوم الحالي.
+          example: "2024-03-10"
+        - name: child_id
+          in: query
+          schema:
+            type: integer
+          description: فلترة الحالات حسب معرف الطفل.
+          example: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الحالات لكل صفحة.
+          example: 15
+      responses:
+        '200':
+          description: قائمة بحالات تناول الوجبات (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChildMealStatus'
+              example:
+                data:
+                  - status_id: 1
+                    child_id: 1
+                    meal_id: 1
+                    consumption_status: EatenWell
+                    status_text: أكل جيدًا
+                    notes: "أكل كل الطبق وكان سعيدًا."
+                    recorded_at: "2025-04-19T18:33:00Z"
+                    meal:
+                      meal_id: 1
+                      meal_date: "2024-03-10"
+                      meal_type: Lunch
+                      menu_description: "دجاج مشوي مع أرز وخضروات سوتيه."
+                      class_id: null
+                      created_at: "2025-04-19T18:32:00Z"
+                      updated_at: "2025-04-19T18:32:00Z"
+                      kindergarten_class: null
+                    child:
+                      child_id: 1
+                      first_name: أحمد
+                      last_name: علي
+                      date_of_birth: "2022-05-15"
+                      gender: Male
+                      enrollment_date: "2024-01-10"
+                      class_id: 1
+                      allergies: "حساسية الفول السوداني."
+                      medical_notes: "لا يوجد."
+                      photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/ahmed_profile.jpg"
+                      created_at: "2025-04-19T18:30:00Z"
+                      updated_at: "2025-04-19T18:30:00Z"
+                    recorded_by: null
+                  - status_id: 2
+                    child_id: 2
+                    meal_id: 3
+                    consumption_status: EatenSome
+                    status_text: أكل البعض
+                    notes: "تناول نصف الوجبة فقط."
+                    recorded_at: "2025-04-19T18:33:30Z"
+                    meal:
+                      meal_id: 3
+                      meal_date: "2024-03-11"
+                      meal_type: Lunch
+                      menu_description: "معكرونة بالصلصة الحمراء وسلطة خضراء."
+                      class_id: 2
+                      created_at: "2025-04-19T18:32:00Z"
+                      updated_at: "2025-04-19T18:32:00Z"
+                      kindergarten_class:
+                        class_id: 2
+                        class_name: مرحلة ما قبل المدرسة (3-6)
+                        description: "مجموعة الأطفال من سن 3 إلى 6 سنوات."
+                        min_age: 3
+                        max_age: 6
+                        created_at: "2025-04-19T18:29:00Z"
+                        updated_at: "2025-04-19T18:29:00Z"
+                    child:
+                      child_id: 2
+                      first_name: فاطمة
+                      last_name: محمد
+                      date_of_birth: "2020-11-20"
+                      gender: Female
+                      enrollment_date: "2024-01-10"
+                      class_id: 2
+                      allergies: "لا توجد حساسية معروفة."
+                      medical_notes: "تحتاج نظارة للقراءة."
+                      photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/fatima_profile.jpg"
+                      created_at: "2025-04-19T18:30:00Z"
+                      updated_at: "2025-04-19T18:30:00Z"
+                    recorded_by: null
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/meal-statuses?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/meal-statuses?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/meal-statuses?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/meal-statuses"
+                  per_page: 15
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '422':
+          description: خطأ في التحقق من الصحة (تاريخ أو معرف طفل غير صالح)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  date:
+                    - التاريخ المدخل لا يطابق التنسيق YYYY-MM-DD.
+                  child_id:
+                    - الطفل المحدد غير موجود أو لا ينتمي لولي الأمر الحالي.
+
+  /announcements:
+    get:
+      summary: عرض الإعلانات العامة والإعلانات الموجهة لفصول أطفال ولي الأمر.
+      tags:
+        - الإعلانات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الإعلانات لكل صفحة.
+          example: 10
+      responses:
+        '200':
+          description: قائمة بالإعلانات (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Announcement'
+              example: # تم تحديث هذا ليتوافق مع الرد الذي قدمته
+                data:
+                  - announcement_id: 3
+                    title: "هل تريد ان تأخذ حسم"
+                    content: "يمكن لأي أب قام بتسجيل أولاده بحيث أن يسجل اكثر من طفل التقديم الى الادارة لاجراء حسم بنسبة 33%"
+                    publish_date: "2025-04-29T14:32:09.000000Z"
+                    author_id: 1
+                    target_class_id: null
+                    created_at: "2025-04-29T14:32:09.000000Z"
+                    updated_at: "2025-04-29T14:32:09.000000Z"
+                    author:
+                      admin_id: 1
+                      user_id: 1
+                      full_name: "مدير النظام"
+                      contact_email: "admin@kindergarten.com"
+                      contact_phone: "123-456-7890"
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                    target_class: null
+                  - announcement_id: 1
+                    title: "أهلاً وسهلاً بالعام الدراسي الجديد"
+                    content: "نرحب بجميع الأطفال وأولياء الأمور في بداية العام الدراسي. نتمنى لكم عاماً مليئاً بالتعلم والمرح."
+                    publish_date: "2025-04-27T20:39:45.000000Z"
+                    author_id: 1
+                    target_class_id: null
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                    author:
+                      admin_id: 1
+                      user_id: 1
+                      full_name: "مدير النظام"
+                      contact_email: "admin@kindergarten.com"
+                      contact_phone: "123-456-7890"
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                    target_class: null
+                  - announcement_id: 2
+                    title: "تذكير برحلة الحديقة"
+                    content: "نود تذكير أولياء أمور فصل (3-6) بالرحلة القادمة إلى الحديقة يوم الخميس. يرجى التأكد من إحضار موافقة الرحلة."
+                    publish_date: "2025-04-27T20:39:45.000000Z"
+                    author_id: 1
+                    target_class_id: 2
+                    created_at: "2025-04-27T20:39:45.000000Z"
+                    updated_at: "2025-04-27T20:39:45.000000Z"
+                    author:
+                      admin_id: 1
+                      user_id: 1
+                      full_name: "مدير النظام"
+                      contact_email: "admin@kindergarten.com"
+                      contact_phone: "123-456-7890"
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                    target_class:
+                      class_id: 2
+                      class_name: "مرحلة ما قبل المدرسة (3-6)"
+                      description: "مجموعة الأطفال من سن 3 إلى 6 سنوات"
+                      min_age: 3
+                      max_age: 6
+                      created_at: "2025-04-27T20:39:45.000000Z"
+                      updated_at: "2025-04-27T20:39:45.000000Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/announcements?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/announcements?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/announcements?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/announcements"
+                  per_page: 10
+                  to: 3
+                  total: 3
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /media:
+    get:
+      summary: عرض ملفات الوسائط (صور وفيديو) ذات الصلة بولي الأمر.
+      tags:
+        - الوسائط
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد عناصر الوسائط لكل صفحة.
+          example: 12
+      responses:
+        '200':
+          description: قائمة بملفات الوسائط (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Media'
+              example:
+                data:
+                  - media_id: 1
+                    file_path: "https://bisque-bear-644012.hostingersite.com/storage/media/art_activity_20240320.jpg"
+                    media_type: Image
+                    description: "الأطفال يستمتعون بوقت الفنون والحرف اليدوية في الفصل."
+                    upload_date: "2025-04-19T18:40:00Z"
+                    uploader_id: 1 # Admin
+                    associated_child_id: null
+                    associated_event_id: null
+                    associated_class_id: 2
+                    created_at: "2025-04-19T18:40:00Z"
+                    updated_at: "2025-04-19T18:40:00Z"
+                    uploader:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    associated_child: null
+                    associated_event: null
+                    associated_class:
+                      class_id: 2
+                      class_name: مرحلة ما قبل المدرسة (3-6)
+                      description: "مجموعة الأطفال من سن 3 إلى 6 سنوات."
+                      min_age: 3
+                      max_age: 6
+                      created_at: "2025-04-19T18:29:00Z"
+                      updated_at: "2025-04-19T18:29:00Z"
+                  - media_id: 2
+                    file_path: "https://bisque-bear-644012.hostingersite.com/storage/media/playground_fun_20240325.mp4"
+                    media_type: Video
+                    description: "وقت اللعب في الساحة الخارجية مع جميع الأطفال."
+                    upload_date: "2025-04-19T18:41:00Z"
+                    uploader_id: 1 # Admin
+                    associated_child_id: null
+                    associated_event_id: null
+                    associated_class_id: null
+                    created_at: "2025-04-19T18:41:00Z"
+                    updated_at: "2025-04-19T18:41:00Z"
+                    uploader:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    associated_child: null
+                    associated_event: null
+                    associated_class: null
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/media?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/media?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/media?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/media"
+                  per_page: 12
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /events:
+    get:
+      summary: عرض الفعاليات القادمة أو النشطة.
+      tags:
+        - الفعاليات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الفعاليات لكل صفحة.
+          example: 10
+      responses:
+        '200':
+          description: قائمة بالفعاليات (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Event'
+              example:
+                data:
+                  - event_id: 1
+                    event_name: رحلة إلى حديقة الحيوان
+                    description: "زيارة تعليمية وترفيهية لحديقة الحيوان."
+                    event_date: "2024-04-15T09:00:00Z"
+                    location: "حديقة الحيوان الوطنية بدمشق"
+                    requires_registration: true
+                    registration_deadline: "2024-04-01T17:00:00Z"
+                    created_by_id: 1 # Admin
+                    created_at: "2025-04-19T18:45:00Z"
+                    updated_at: "2025-04-19T18:45:00Z"
+                    created_by:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    registrations: null
+                  - event_id: 2
+                    event_name: يوم الأنشطة الرياضية
+                    description: "يوم مفتوح للأنشطة الرياضية والألعاب في ساحة الروضة."
+                    event_date: "2024-05-10T10:00:00Z"
+                    location: "ساحة الروضة"
+                    requires_registration: false
+                    registration_deadline: null
+                    created_by_id: 1 # Admin
+                    created_at: "2025-04-19T18:46:00Z"
+                    updated_at: "2025-04-19T18:46:00Z"
+                    created_by:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    registrations: null
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/events?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/events?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/events?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/events"
+                  per_page: 10
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /events/{event}:
+    get:
+      summary: عرض تفاصيل فعالية محددة مع الإشارة إلى ما إذا كان أطفال ولي الأمر مسجلين.
+      tags:
+        - الفعاليات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: event
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف الفعالية (event_id).
+          example: 1
+      responses:
+        '200':
+          description: تفاصيل الفعالية (مع حالة التسجيل).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Event'
+                  - type: object
+                    properties:
+                      is_registered_by_current_user:
+                        type: boolean
+                        description: هل أي من أطفال ولي الأمر الحالي مسجل في هذه الفعالية.
+                        example: true
+              example:
+                event_id: 1
+                event_name: رحلة إلى حديقة الحيوان
+                description: "زيارة تعليمية وترفيهية لحديقة الحيوان."
+                event_date: "2024-04-15T09:00:00Z"
+                location: "حديقة الحيوان الوطنية بدمشق"
+                requires_registration: true
+                registration_deadline: "2024-04-01T17:00:00Z"
+                created_by_id: 1 # Admin
+                created_at: "2025-04-19T18:45:00Z"
+                updated_at: "2025-04-19T18:45:00Z"
+                created_by:
+                  id: 1
+                  name: مدير النظام
+                  email: admin@kindergarten.com
+                  role: Admin
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T18:27:35Z"
+                registrations:
+                  - registration_id: 1
+                    event_id: 1
+                    child_id: 2 # فاطمة
+                    registration_date: "2025-04-19T18:50:00Z"
+                    parent_consent: true
+                    created_at: "2025-04-19T18:50:00Z"
+                    updated_at: "2025-04-19T18:50:00Z"
+                    event: null
+                    child:
+                      child_id: 2
+                      first_name: فاطمة
+                      last_name: محمد
+                      date_of_birth: "2020-11-20"
+                      gender: Female
+                      enrollment_date: "2024-01-10"
+                      class_id: 2
+                      allergies: "لا توجد حساسية معروفة."
+                      medical_notes: "تحتاج نظارة للقراءة."
+                      photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/fatima_profile.jpg"
+                      created_at: "2025-04-19T18:30:00Z"
+                      updated_at: "2025-04-19T18:30:00Z"
+                  - registration_id: 2
+                    event_id: 1
+                    child_id: 3 # زينب
+                    registration_date: "2025-04-19T18:50:30Z"
+                    parent_consent: true
+                    created_at: "2025-04-19T18:50:30Z"
+                    updated_at: "2025-04-19T18:50:30Z"
+                    event: null
+                    child:
+                      child_id: 3
+                      first_name: زينب
+                      last_name: حسن
+                      date_of_birth: "2021-08-01"
+                      gender: Female
+                      enrollment_date: "2024-02-01"
+                      class_id: 2
+                      allergies: "حساسية اللاكتوز."
+                      medical_notes: "لا يوجد."
+                      photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/zeinab_profile.jpg"
+                      created_at: "2025-04-19T18:30:00Z"
+                      updated_at: "2025-04-19T18:30:00Z"
+                is_registered_by_current_user: true
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '404':
+          description: لم يتم العثور على الفعالية.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على الفعالية."
+
+  /events/{event}/register:
+    post:
+      summary: تسجيل طفل (تابع لولي الأمر) في فعالية تتطلب التسجيل.
+      tags:
+        - الفعاليات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: event
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف الفعالية (event_id).
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreEventRegistrationRequest'
+      responses:
+        '201':
+          description: تم تسجيل الطفل بنجاح في الفعالية.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventRegistration'
+              example:
+                registration_id: 3
+                event_id: 1
+                child_id: 1 # أحمد
+                registration_date: "2025-04-19T19:55:00Z"
+                parent_consent: true
+                created_at: "2025-04-19T19:55:00Z"
+                updated_at: "2025-04-19T19:55:00Z"
+                event:
+                  event_id: 1
+                  event_name: رحلة إلى حديقة الحيوان
+                  description: "زيارة تعليمية وترفيهية لحديقة الحيوان."
+                  event_date: "2024-04-15T09:00:00Z"
+                  location: "حديقة الحيوان الوطنية بدمشق"
+                  requires_registration: true
+                  registration_deadline: "2024-04-01T17:00:00Z"
+                  created_by_id: 1 # Admin
+                  created_at: "2025-04-19T18:45:00Z"
+                  updated_at: "2025-04-19T18:45:00Z"
+                child:
+                  child_id: 1
+                  first_name: أحمد
+                  last_name: علي
+                  date_of_birth: "2022-05-15"
+                  gender: Male
+                  enrollment_date: "2024-01-10"
+                  class_id: 1
+                  allergies: "حساسية الفول السوداني."
+                  medical_notes: "لا يوجد."
+                  photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/ahmed_profile.jpg"
+                  created_at: "2025-04-19T18:30:00Z"
+                  updated_at: "2025-04-19T18:30:00Z"
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '404':
+          description: لم يتم العثور على الفعالية.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على الفعالية."
+        '422':
+          description: خطأ في التحقق من الصحة (معرف طفل غير صالح، موعد التسجيل انتهى، الفعالية لا تتطلب تسجيل)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  child_id:
+                    - الطفل المحدد غير موجود أو لا ينتمي لولي الأمر الحالي.
+                  event:
+                    - موعد التسجيل لهذه الفعالية قد انتهى.
+                    - هذه الفعالية لا تتطلب تسجيل.
+        '409':
+          description: تعارض (الطفل مسجل بالفعل في الفعالية)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "الطفل مسجل بالفعل في هذه الفعالية."
+
+  /event-registrations/{registration}:
+    delete:
+      summary: إلغاء تسجيل طفل من فعالية.
+      tags:
+        - الفعاليات
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: registration
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف التسجيل (registration_id).
+          example: 1
+      responses:
+        '200':
+          description: تم إلغاء التسجيل بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessageResponse'
+              example:
+                message: تم إلغاء التسجيل بنجاح.
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (التسجيل لا يخص طفل ولي الأمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به."
+        '404':
+          description: لم يتم العثور على التسجيل.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على التسجيل."
+
+  /educational-resources:
+    get:
+      summary: عرض المصادر التعليمية (فيديوهات، مقالات، ألعاب، روابط).
+      tags:
+        - المصادر التعليمية
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد المصادر لكل صفحة.
+          example: 15
+        - name: subject
+          in: query
+          schema:
+            type: string
+          description:  
+            اللغة العربية
+            الرياضيات
+          example: اللغة العربية
+        - name: age
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 18
+          description: فلترة المصادر حسب عمر الطفل (يعرض المصادر المناسبة لهذا العمر).
+          example: 4
+      responses:
+        '200':
+          description: قائمة بالمصادر التعليمية (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EducationalResource'
+              example:
+                data:
+                  - resource_id: 1
+                    title: أغنية الحروف الأبجدية
+                    description: "فيديو تعليمي ممتع لتعلم الحروف العربية بطريقة تفاعلية ومبتكرة."
+                    resource_type: Video
+                    url_or_path: "https://www.youtube.com/watch?v=ABCDEFG1234"
+                    target_age_min: 3
+                    target_age_max: 6
+                    subject: اللغة العربية
+                    added_by_id: 1 # Admin
+                    created_at: "2025-04-19T18:55:00Z"
+                    updated_at: "2025-04-19T18:55:00Z"
+                    added_by:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                  - resource_id: 2
+                    title: تعلم الأشكال الهندسية
+                    description: "نشاط تفاعلي لتعريف الأطفال بالأشكال الأساسية والمجسمات."
+                    resource_type: Link
+                    url_or_path: "http://example.com/shapes_game_interactive"
+                    target_age_min: 2
+                    target_age_max: 5
+                    subject: الرياضيات
+                    added_by_id: 1 # Admin
+                    created_at: "2025-04-19T18:56:00Z"
+                    updated_at: "2025-04-19T18:56:00Z"
+                    added_by:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/educational-resources?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/educational-resources?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/educational-resources?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/educational-resources"
+                  per_page: 15
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+  /observations:
+    post:
+      summary: إرسال ملاحظة / تعليق من ولي الأمر.
+      tags:
+        - الملاحظات
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreObservationRequest'
+      responses:
+        '201':
+          description: تم إنشاء الملاحظة بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Observation'
+              example:
+                observation_id: 1
+                parent_id: 2 # ولي أمر زينب
+                child_id: 3 # زينب
+                observation_text: "لاحظت أن زينب متحمسة جداً لنشاط الفنون والحرف اليدوية الأخير، وقد تحدثت عنه في المنزل كثيرًا."
+                submitted_at: "2025-04-19T19:20:00Z"
+                created_at: "2025-04-19T19:20:00Z"
+                updated_at: "2025-04-19T19:20:00Z"
+                parent_submitter:
+                  parent_id: 2
+                  user_id: 3
+                  full_name: ولي أمر ٢
+                  contact_email: parent2@example.com
+                  contact_phone: "0999555555"
+                  address: "456 شارع المجد، حي الياسمين"
+                  created_at: "2025-04-19T18:28:30Z"
+                  updated_at: "2025-04-19T18:28:30Z"
+                child:
+                  child_id: 3
+                  first_name: زينب
+                  last_name: حسن
+                  date_of_birth: "2021-08-01"
+                  gender: Female
+                  enrollment_date: "2024-02-01"
+                  class_id: 2
+                  allergies: "حساسية اللاكتوز."
+                  medical_notes: "لا يوجد."
+                  photo_url: "https://bisque-bear-644012.hostingersite.com/storage/children_photos/zeinab_profile.jpg"
+                  created_at: "2025-04-19T18:30:00Z"
+                  updated_at: "2025-04-19T18:30:00Z"
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '422':
+          description: خطأ في التحقق من الصحة (نص ملاحظة مفقود، معرف طفل غير صالح)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  observation_text:
+                    - حقل نص الملاحظة مطلوب.
+                  child_id:
+                    - الطفل المحدد غير موجود أو لا ينتمي لولي الأمر الحالي.
+
+  /messages:
+    get:
+      summary: عرض الرسائل المرسلة أو المستلمة للمستخدم الحالي.
+      tags:
+        - الرسائل
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+          description: عدد الرسائل لكل صفحة.
+          example: 20
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: فلترة الرسائل حسب التاريخ (YYYY-MM-DD).
+          example: "2024-03-10"
+      responses:
+        '200':
+          description: قائمة بالرسائل (مع Pagination).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Message'
+              example:
+                data:
+                  - message_id: 1
+                    sender_id: 1 # Admin
+                    recipient_id: 2 # Parent1
+                    subject: تذكير بخصوص رحلة الحديقة
+                    body: |
+                      السيدة/السيد ولي أمر ١، نود تذكيركم بالرحلة القادمة إلى الحديقة يوم الخميس.
+                      يرجى التأكد من إحضار موافقة الرحلة قبل الموعد.
+                    sent_at: "2025-04-19T19:10:00Z"
+                    read_at: "2025-04-19T19:15:00Z"
+                    created_at: "2025-04-19T19:10:00Z"
+                    updated_at: "2025-04-19T19:10:00Z"
+                    sender:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    recipient:
+                      id: 2
+                      name: ولي أمر ١
+                      email: parent1@example.com
+                      role: Parent
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                  - message_id: 2
+                    sender_id: 2 # Parent1
+                    recipient_id: 1 # Admin
+                    subject: استفسار عن الواجب المنزلي
+                    body: "مرحباً، هل يوجد واجب منزلي للطفل أحمد اليوم؟"
+                    sent_at: "2025-04-19T19:18:00Z"
+                    read_at: null
+                    created_at: "2025-04-19T19:18:00Z"
+                    updated_at: "2025-04-19T19:18:00Z"
+                    sender:
+                      id: 2
+                      name: ولي أمر ١
+                      email: parent1@example.com
+                      role: Parent
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                    recipient:
+                      id: 1
+                      name: مدير النظام
+                      email: admin@kindergarten.com
+                      role: Admin
+                      is_active: true
+                      created_at: "2025-04-19T18:27:35Z"
+                      updated_at: "2025-04-19T18:27:35Z"
+                links:
+                  first: "https://bisque-bear-644012.hostingersite.com/api/messages?page=1"
+                  last: "https://bisque-bear-644012.hostingersite.com/api/messages?page=1"
+                  prev: null
+                  next: null
+                meta:
+                  current_page: 1
+                  from: 1
+                  last_page: 1
+                  links:
+                    - url: null
+                      label: "&laquo; Previous"
+                      active: false
+                    - url: "https://bisque-bear-644012.hostingersite.com/api/messages?page=1"
+                      label: "1"
+                      active: true
+                    - url: null
+                      label: "Next &raquo;"
+                      active: false
+                  path: "https://bisque-bear-644012.hostingersite.com/api/messages"
+                  per_page: 20
+                  to: 2
+                  total: 2
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+
+    post:
+      summary: إرسال رسالة جديدة من ولي الأمر.
+      tags:
+        - الرسائل
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoreMessageRequest'
+      responses:
+        '201':
+          description: تم إرسال الرسالة بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message_id: 3
+                sender_id: 2 # Parent1
+                recipient_id: 1 # Admin
+                subject: استفسار بخصوص الرسوم
+                body: "متى يتم دفع رسوم الشهر القادم؟ شكراً."
+                sent_at: "2025-04-19T19:22:00Z"
+                read_at: null
+                created_at: "2025-04-19T19:22:00Z"
+                updated_at: "2025-04-19T19:22:00Z"
+                sender:
+                  id: 2
+                  name: ولي أمر ١
+                  email: parent1@example.com
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T18:27:35Z"
+                recipient:
+                  id: 1
+                  name: مدير النظام
+                  email: admin@kindergarten.com
+                  role: Admin
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T18:27:35Z"
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (ليس ولي أمر)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به. تم رفض الوصول."
+        '422':
+          description: خطأ في التحقق من الصحة (مستلم غير صالح، نص رسالة فارغ)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "البيانات المدخلة غير صحيحة."
+                errors:
+                  recipient_id:
+                    - لا يمكنك إرسال رسالة لهذا المستخدم.
+                  body:
+                    - حقل نص الرسالة مطلوب.
+
+  /messages/{message}:
+    get:
+      summary: عرض تفاصيل رسالة محددة.
+      tags:
+        - الرسائل
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: message
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف الرسالة (message_id).
+          example: 1
+      responses:
+        '200':
+          description: تفاصيل الرسالة.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message_id: 1
+                sender_id: 1 # Admin
+                recipient_id: 2 # Parent1
+                subject: تذكير بخصوص رحلة الحديقة
+                body: |
+                  السيدة/السيد ولي أمر ١، نود تذكيركم بالرحلة القادمة إلى الحديقة يوم الخميس.
+                  يرجى التأكد من إحضار موافقة الرحلة قبل الموعد.
+                sent_at: "2025-04-19T19:10:00Z"
+                read_at: "2025-04-19T19:15:00Z"
+                created_at: "2025-04-19T19:10:00Z"
+                updated_at: "2025-04-19T19:10:00Z"
+                sender:
+                  id: 1
+                  name: مدير النظام
+                  email: admin@kindergarten.com
+                  role: Admin
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T18:27:35Z"
+                recipient:
+                  id: 2
+                  name: ولي أمر ١
+                  email: parent1@example.com
+                  role: Parent
+                  is_active: true
+                  created_at: "2025-04-19T18:27:35Z"
+                  updated_at: "2025-04-19T18:27:35Z"
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (المستخدم ليس المرسل أو المستقبل)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به."
+        '404':
+          description: لم يتم العثور على الرسالة.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على الرسالة."
+
+    delete:
+      summary: حذف رسالة.
+      tags:
+        - الرسائل
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: message
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: معرف الرسالة (message_id).
+          example: 1
+      responses:
+        '200':
+          description: تم حذف الرسالة بنجاح.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessageResponse'
+              example:
+                message: تم حذف الرسالة بنجاح.
+        '401':
+          description: غير مصرح به
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              example:
+                message: "Unauthenticated."
+        '403':
+          description: غير مصرح به (المستخدم ليس المرسل أو المستقبل)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: "غير مصرح به."
+        '404':
+          description: لم يتم العثور على الرسالة.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                message: "لم يتم العثور على الرسالة."

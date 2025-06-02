@@ -8,16 +8,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use App\Http\Resources\ObservationResource;
+use App\Models\ParentModel; // يمكنك استيراده
 
 class ObservationController extends Controller
 {
     /**
      * Display observations submitted by the authenticated parent with pagination.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Resources\Json\AnonymousResourceCollection|\Illuminate\Http\JsonResponse
      */
-    public function index(Request $request) // <-- إضافة Request $request
+    public function index(Request $request)
     {
         $user = Auth::user();
         $parent = $user ? $user->parentProfile : null;
@@ -26,24 +24,18 @@ class ObservationController extends Controller
              return response()->json(['error' => 'Parent profile not found.'], 404);
         }
 
-        // --- تنفيذ TODO: Pagination ---
-        $perPage = $request->query('per_page', 15); // عدد الملاحظات لكل صفحة
+        $perPage = $request->query('per_page', 15);
 
-        // جلب الملاحظات مع تحميل علاقة الطفل (الملاحظات تخص ولي الأمر الحالي فقط)
-        $observations = Observation::with(['child']) // معلومات ولي الأمر معروفة بالفعل
-                       ->where('parent_id', $parent->parent_id) // فقط ملاحظات ولي الأمر الحالي
-                       ->latest('submitted_at') // الترتيب حسب الأحدث
-                       ->paginate($perPage); // تطبيق الـ pagination
+        $observations = Observation::with(['child'])
+                       ->where('parent_id', $parent->parent_id)
+                       ->latest('submitted_at')
+                       ->paginate($perPage);
 
-        // إرجاع النتائج باستخدام الريسورس
         return ObservationResource::collection($observations);
     }
 
     /**
      * Store a new observation/feedback from the parent.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \App\Http\Resources\ObservationResource|\Illuminate\Http\JsonResponse
      */
     public function store(Request $request)
     {
@@ -54,58 +46,49 @@ class ObservationController extends Controller
              return response()->json(['error' => 'Parent profile not found.'], 404);
         }
 
-        // الحصول على معرفات أطفال ولي الأمر للتحقق
-        $parentChildIds = $parent->children()->pluck('child_id');
+        // الحصول على معرفات أطفال ولي الأمر مع تحديد الجدول
+        // ---=== تعديل هنا ===---
+        $parentChildIds = $parent->children()->pluck('children.child_id');
+        // ---=== نهاية التعديل ===---
 
-        // التحقق من صحة الطلب
         $validated = $request->validate([
             'observation_text' => ['required', 'string', 'max:2000'],
             'child_id' => [
-                'nullable', // قد تكون الملاحظة عامة غير مرتبطة بطفل معين
+                'nullable',
                 'integer',
                 // التأكد من أن الطفل (إذا تم تحديده) ينتمي لولي الأمر
+                // ---=== تعديل هنا أيضًا لتحديد الجدول في whereIn إذا كان $parentChildIds عبارة عن Collection ===---
                 Rule::exists('children', 'child_id')->where(function ($query) use ($parentChildIds) {
-                    $query->whereIn('child_id', $parentChildIds);
+                    // إذا كان $parentChildIds هو Collection، استخدم ->all()
+                    $query->whereIn('children.child_id', $parentChildIds->all());
                 }),
+                // ---=== نهاية التعديل ===---
              ],
         ]);
 
-        // إنشاء الملاحظة
         $observation = Observation::create([
             'parent_id' => $parent->parent_id,
-            'child_id' => $validated['child_id'] ?? null, // استخدام null إذا لم يتم توفير child_id
+            'child_id' => $validated['child_id'] ?? null,
             'observation_text' => $validated['observation_text'],
-             // submitted_at يأخذ القيمة الافتراضية CURRENT_TIMESTAMP
         ]);
 
-        // إرجاع بيانات الملاحظة الجديدة مع تحميل العلاقات المطلوبة للريسورس
         return new ObservationResource($observation->load(['child', 'parentSubmitter']));
     }
 
-    // --- تنفيذ TODO (اختياري): السماح لولي الأمر بحذف ملاحظاته ---
     /**
      * Remove the specified observation if submitted by the authenticated parent.
-     *
-     * @param  \App\Models\Observation  $observation
-     * @return \Illuminate\Http\JsonResponse
      */
     public function destroy(Observation $observation)
     {
         $user = Auth::user();
         $parent = $user ? $user->parentProfile : null;
 
-        // التحقق من أن المستخدم هو ولي الأمر الذي قدم الملاحظة
         if (!$parent || $observation->parent_id !== $parent->parent_id) {
             return response()->json(['error' => 'Unauthorized to delete this observation.'], 403);
         }
 
-        // حذف الملاحظة
         $observation->delete();
 
-        // إرجاع رسالة نجاح
         return response()->json(['message' => 'Observation deleted successfully.'], 200);
     }
-
-    // show, update not typically needed for observations from the parent's perspective via API
-    // (Admin/Supervisor might have a 'show' view in their web interface)
 }

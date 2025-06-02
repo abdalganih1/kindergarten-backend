@@ -18,25 +18,40 @@ class Event extends Model
         'location',
         'requires_registration',
         'registration_deadline',
-        'created_by_id',
+        'created_by_id', // هذا هو user_id للمنشئ
     ];
 
-    // Define relationships
-    public function createdByAdmin()
+    /**
+     * The attributes that should be cast.
+     */
+    protected $casts = [
+        'event_date' => 'datetime',
+        'registration_deadline' => 'datetime',
+        'requires_registration' => 'boolean',
+    ];
+
+    // ---=== تعديل هذه العلاقة ===---
+    /**
+     * Get the user who created the event.
+     */
+    public function creator() // تم تغيير الاسم من createdByAdmin إلى creator
     {
-        return $this->belongsTo(Admin::class, 'created_by_id', 'admin_id');
+        // يفترض أن created_by_id هو user_id
+        return $this->belongsTo(User::class, 'created_by_id', 'id');
     }
+    // ---=== نهاية التعديل ===---
+
 
     public function registrations()
     {
         return $this->hasMany(EventRegistration::class, 'event_id', 'event_id');
     }
 
-    public function children() // Children registered for this event
+    public function children()
     {
         return $this->belongsToMany(Child::class, 'event_registrations', 'event_id', 'child_id')
-                    ->withPivot('registration_date', 'parent_consent') // Include extra pivot columns if needed
-                    ->withTimestamps(); // If event_registrations has timestamps
+                    ->withPivot('registration_date', 'parent_consent')
+                    ->withTimestamps();
     }
 
      public function media()
